@@ -1,5 +1,5 @@
 import { buildEnvironment, candlelight } from './environment.js';
-import { createBackdrop, createBall, createTable, RADIUS } from './model.js';
+import { createBackdrop, createBall, createTable, FOOT, RADIUS } from './model.js';
 import { ENERGY_GAIN, MOODS } from './moods.js';
 import { approach } from './motion.js';
 import { paletteColour } from './vision.js';
@@ -30,6 +30,9 @@ const REACH = 1.25;
 
 /** How bright the light the visions throw on the stand and the cloth is, at a glow of one. */
 const LAMP = 1.25;
+
+/** How far the shadow round the stand's foot spreads over the cloth, in radii from the upright. */
+const CONTACT = 1.05;
 
 function radialTexture(GFX, stops) {
   if (typeof document === 'undefined') return null;
@@ -178,6 +181,23 @@ export function createKrystal({ stage, GFX, random = Math.random }) {
   if (stage._scene?.add) {
     stage._scene.add(backdrop);
     stage._scene.add(createTable(GFX));
+
+    // Where the foot meets the cloth the cloth goes dark, the way it does
+    // under anything set down on it; without that the stand reads as hovering
+    // over the table from low down.
+    const contact = radialTexture(GFX, [[0, 0.85], [0.68, 0.85], [0.8, 0.4], [1, 0]]);
+    if (contact) {
+      const shade = new GFX.Mesh(
+        new GFX.CircleGeometry(R * CONTACT, 64),
+        new GFX.MeshBasicMaterial({
+          name: 'contact', map: contact, color: new GFX.Color('#000000'), transparent: true, depthWrite: false,
+        }),
+      );
+      shade.name = 'contact';
+      shade.rotation.x = -Math.PI / 2;
+      shade.position.y = -R * (FOOT - 0.002);
+      stage._scene.add(shade);
+    }
 
     // It reaches the cup the ball sits in and no further: nothing here casts a
     // shadow from it, and lighting the foot through the stem would show.
