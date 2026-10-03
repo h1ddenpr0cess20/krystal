@@ -38,12 +38,22 @@ export function cosmosColour(elevation) {
   return mix(COSMOS.horizon, COSMOS.nadir, Math.pow(-up, 0.5));
 }
 
-/** Smooth value noise on a lattice that wraps round in x, so the seam never shows. */
-function createNoise(random, period) {
-  const size = 256;
-  const table = new Float32Array(size * size);
+const LATTICE = 256;
+
+/** A table of random values for `wrappingNoise` to read, so two noises with different periods can share one. */
+function lattice(random) {
+  const table = new Float32Array(LATTICE * LATTICE);
   for (let i = 0; i < table.length; i++) table[i] = random();
-  const at = (x, y) => table[(((y % size) + size) % size) * size + (((x % period) + period) % period)];
+  return table;
+}
+
+/**
+ * Smooth value noise on a lattice that wraps round in x every `period` cells.
+ * Read at x from 0 up to a whole number of periods, it meets itself where the
+ * equirectangular map closes round, so the seam never shows.
+ */
+function wrappingNoise(table, period) {
+  const at = (x, y) => table[(((y % LATTICE) + LATTICE) % LATTICE) * LATTICE + (((x % period) + period) % period)];
   const fade = (t) => t * t * (3 - 2 * t);
   return (x, y) => {
     const xi = Math.floor(x);
@@ -80,33 +90,43 @@ function dither(ctx, width, height, random) {
 export function paintCosmos(ctx, width, height, { random = Math.random } = {}) {
   const w = Math.max(64, width >> 2);
   const h = Math.max(32, height >> 2);
+  /**
+   * One column more each side than the sky has, holding the far side's: the
+   * scaled-up nebula then blends across the edge of the map instead of
+   * stopping short of it, and the two ends meet without a line.
+   */
   const scratch = ctx.canvas.ownerDocument?.createElement('canvas') ?? document.createElement('canvas');
-  scratch.width = w;
+  scratch.width = w + 2;
   scratch.height = h;
   const sctx = scratch.getContext('2d');
-  const img = sctx.createImageData(w, h);
+  const img = sctx.createImageData(w + 2, h);
 
+  /**
+   * Once round the sky is `base` lattice cells at the coarsest octave, and
+   * twice as many at each finer one: every octave's lattice wraps after just
+   * that many, so each closes up where the map does without repeating on the
+   * way round. The tint is read at half the scale, so it wraps at half a `base`.
+   */
   const base = 6;
-  const noise = createNoise(random, base * 16);
+  const table = lattice(random);
+  const octaves = [1, 2, 4, 8, 16].map((f) => ({ f, noise: wrappingNoise(table, base * f) }));
+  const tint = wrappingNoise(table, base / 2);
   const fbm = (x, y) => {
     let sum = 0;
     let amp = 0.5;
-    let f = 1;
-    for (let o = 0; o < 5; o++) {
+    for (const { f, noise } of octaves) {
       sum += noise(x * f, y * f) * amp;
       amp *= 0.5;
-      f *= 2;
     }
     return sum;
   };
-  const tint = noise;
 
   for (let y = 0; y < h; y++) {
     const elevation = (0.5 - (y + 0.5) / h) * Math.PI;
     const sky = cosmosColour(elevation);
     /** The drifts gather in a band a little above the horizon, like a galaxy seen edge on. */
     const band = Math.exp(-Math.pow((elevation - 0.25) / 0.55, 2));
-    for (let x = 0; x < w; x++) {
+    for (let x = -1; x <= w; x++) {
       const u = (x / w) * base;
       const v = (y / h) * base * 0.5;
       const cloud = Math.max(0, fbm(u + fbm(u + 3.1, v) * 1.5, v + fbm(u, v + 7.7)) - 0.42) * 2.6;
@@ -115,7 +135,7 @@ export function paintCosmos(ctx, width, height, { random = Math.random } = {}) {
       const k = Math.floor(along);
       const colour = mix(NEBULA[k % NEBULA.length], NEBULA[(k + 1) % NEBULA.length], along - k);
       const amount = Math.min(1, cloud * cloud * (0.25 + band * 0.9));
-      const i = (y * w + x) * 4;
+      const i = (y * (w + 2) + x + 1) * 4;
       img.data[i] = lerp(sky[0], colour[0], amount * 0.75);
       img.data[i + 1] = lerp(sky[1], colour[1], amount * 0.75);
       img.data[i + 2] = lerp(sky[2], colour[2], amount * 0.75);
@@ -126,7 +146,8 @@ export function paintCosmos(ctx, width, height, { random = Math.random } = {}) {
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(scratch, 0, 0, width, height);
+  const texel = width / w;
+  ctx.drawImage(scratch, -texel, 0, width + texel * 2, height);
   dither(ctx, width, height, random);
 
   /** Stars: thicker toward the band, thinning toward the poles of the sphere they sit on. */
@@ -144,6 +165,12 @@ export function paintCosmos(ctx, width, height, { random = Math.random } = {}) {
     ctx.fillStyle = `rgba(${colour}, ${alpha})`;
     ctx.beginPath();
     ctx.arc(x, y, size, 0, Math.PI * 2);
+    /** One that hangs over an edge of the map is the rest of the way round, too. */
+    for (const across of [x + width, x - width]) {
+      if (across - size > width || across + size < 0) continue;
+      ctx.moveTo(across + size, y);
+      ctx.arc(across, y, size, 0, Math.PI * 2);
+    }
     ctx.fill();
   }
 }

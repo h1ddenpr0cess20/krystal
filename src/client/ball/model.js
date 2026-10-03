@@ -13,11 +13,13 @@ const BACKDROP_RADIUS = 60;
 /**
  * The stand's outline, turned about the upright, in radii from the centre of
  * the ball: a round foot, a waisted stem, and a cup the ball sits down into.
+ * The foot is flat right out to a small round at its edge, so it sits down on
+ * the cloth rather than lifting off it on a bevel.
  * It goes out along the underside, up the outside to the lip, and back in
  * underneath the ball, so the inside of the cup is never open to the sky.
  */
 const STAND = [
-  [0.0, -1.62], [0.66, -1.62], [0.72, -1.6], [0.74, -1.56], [0.7, -1.52],
+  [0.0, -1.62], [0.72, -1.62], [0.745, -1.6], [0.745, -1.565], [0.7, -1.52],
   [0.56, -1.48], [0.42, -1.43], [0.3, -1.33], [0.22, -1.21], [0.19, -1.12],
   [0.22, -1.05], [0.3, -0.99], [0.42, -0.93], [0.54, -0.86], [0.63, -0.8],
   [0.6, -0.79], [0.5, -0.88], [0.3, -0.97], [0.0, -1.02],
@@ -97,9 +99,27 @@ export function createBall(GFX) {
 }
 
 /**
- * The table the stand sits on: a round top under a dark velvet cloth that
- * falls away at the edge. Added after the stage frames the ball, so it does
- * not count toward the framing.
+ * The table's pedestal, turned about the upright, in radii below the top of
+ * the cloth: a broad round foot on the floor, a column with a swell partway
+ * up, and a block that flares out under the board. It goes out along the
+ * underside and up the outside, as the stand does, so it faces outward.
+ */
+const PEDESTAL = [
+  [0.0, -4.0], [1.4, -4.0], [1.42, -3.94], [1.3, -3.86], [0.9, -3.74],
+  [0.55, -3.56], [0.34, -3.32], [0.26, -3.02], [0.3, -2.62], [0.4, -2.24],
+  [0.32, -1.86], [0.26, -1.3], [0.3, -0.62], [0.46, -0.36], [0.72, -0.2],
+  [0.72, -0.1], [0.0, -0.1],
+];
+
+/** How far the board's top sits under the cloth, in radii: just enough that the two never fight. */
+const UNDER_CLOTH = 0.004;
+
+/**
+ * The table the stand sits on: a round wooden board on a turned pedestal,
+ * under a dark velvet cloth that falls away at the edge. The cloth shows on
+ * both sides, so seen from low down the inside of its fall is velvet and the
+ * board and the pedestal are under it, not the sky. Added after the stage
+ * frames the ball, so it does not count toward the framing.
  */
 export function createTable(GFX) {
   const R = RADIUS;
@@ -107,6 +127,13 @@ export function createTable(GFX) {
     name: 'velvet',
     color: new GFX.Color('#26134a'),
     roughness: 0.95,
+    metalness: 0,
+    side: GFX.DoubleSide,
+  });
+  const wood = new GFX.MeshStandardMaterial({
+    name: 'wood',
+    color: new GFX.Color('#3b2416'),
+    roughness: 0.55,
     metalness: 0,
   });
   const top = new GFX.Mesh(new GFX.CircleGeometry(R * 3.2, 96), velvet);
@@ -122,9 +149,19 @@ export function createTable(GFX) {
   fringe.name = 'fringe';
   fringe.rotation.x = Math.PI / 2;
 
+  const board = new GFX.Mesh(new GFX.CylinderGeometry(R * 3.15, R * 3.15, R * 0.1, 96), wood);
+  board.name = 'board';
+  board.position.y = -R * (0.05 + UNDER_CLOTH);
+
+  const pedestal = new GFX.Mesh(
+    new GFX.LatheGeometry(PEDESTAL.map(([r, y]) => new GFX.Vector2(r * R, y * R)), 64),
+    wood,
+  );
+  pedestal.name = 'pedestal';
+
   const table = new GFX.Group();
   table.name = 'table';
-  table.add(top, fall, fringe);
+  table.add(top, fall, fringe, board, pedestal);
   table.position.y = -FOOT * R;
   return table;
 }
