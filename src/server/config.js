@@ -1,0 +1,71 @@
+import { readFileSync } from 'node:fs';
+
+/**
+ * The women's voices among xAI's twenty-six, and Krystal speaks in one of
+ * them: Eve first, soothing, which is what a reading wants. The rest of the
+ * roster still works if it is named in XAI_VOICE — it is only left out of the
+ * picker.
+ */
+export const KNOWN_VOICES = Object.freeze([
+  'eve', 'ara', 'celeste', 'luna', 'carina', 'iris', 'lumen', 'lux',
+]);
+
+export const KNOWN_MODELS = Object.freeze(['grok-voice-latest', 'grok-voice-think-fast-1.0']);
+
+function flag(value, fallback) {
+  if (value == null || value === '') return fallback;
+  return !/^(0|false|no|off)$/i.test(value);
+}
+
+function loadMcpServers(env) {
+  const raw = env.XAI_MCP_SERVERS || readMcpFile(env.XAI_MCP_FILE || 'mcp.json');
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    return list.filter((s) => {
+      const ok = s && typeof s.server_url === 'string' && typeof s.server_label === 'string';
+      if (!ok) console.warn('mcp: dropping an entry without server_url + server_label');
+      return ok;
+    });
+  } catch (err) {
+    console.warn(`mcp: could not parse the server list — ${err.message}`);
+    return [];
+  }
+}
+
+function readMcpFile(path) {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+export function loadConfig(env = process.env) {
+  const defaultVoice = env.XAI_VOICE || KNOWN_VOICES[0];
+  const defaultModel = env.XAI_MODEL || KNOWN_MODELS[0];
+
+  return {
+    port: Number(env.PORT) || 5173,
+    /** Empty means "decide from how it was started" — see src/server/index.js. */
+    host: env.HOST || '',
+    apiKey: env.XAI_API_KEY,
+    realtimeUrl: env.XAI_REALTIME_URL || 'wss://api.x.ai/v1/realtime',
+    defaultModel,
+    defaultVoice,
+    voices: KNOWN_VOICES.includes(defaultVoice)
+      ? [...KNOWN_VOICES]
+      : [defaultVoice, ...KNOWN_VOICES],
+    models: KNOWN_MODELS.includes(defaultModel)
+      ? [...KNOWN_MODELS]
+      : [defaultModel, ...KNOWN_MODELS],
+    tools: {
+      webSearch: flag(env.XAI_WEB_SEARCH, true),
+      xSearch: flag(env.XAI_X_SEARCH, true),
+      memory: flag(env.MEMORY, true),
+      oracle: flag(env.ORACLE, true),
+      mcpServers: loadMcpServers(env),
+    },
+  };
+}
